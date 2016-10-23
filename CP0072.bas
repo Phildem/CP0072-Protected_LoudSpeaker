@@ -4,6 +4,7 @@
 ' Release History
 ' 17/07/2016	V1.0 		Phildem		Creation Proto
 ' 22/10/2016	V1.1 		Phildem		Final Release
+' 23/10/2016	V1.2 		Phildem		Lin/Log Button is activ when Lin
 
 ' IO abstraction
 symbol Out_Data		= B.1		'Ser_Data
@@ -14,7 +15,7 @@ symbol In_Hp48 		= pinB.5	'HP 4/8 Ohm Button activ Low
 symbol Out_Piezzo		= C.0		'Piezzo
 symbol In_DcNeg 		= pinC.1	'HP DC Detection Neg activ Low
 symbol In_DcPos 		= pinC.2	'HP DC Detection Pos activ Low
-symbol In_Log		= pinC.3	'Lin/Log Button activ Low
+symbol In_Lin		= pinC.3	'Lin/Log Button activ Low
 symbol ADC_HP		= C.4		'Voltage at HP 0->4.5V 
 
 ' Misc Constant
@@ -24,7 +25,7 @@ symbol kBarMaxHold 	= 15		' Max Segment hold in 100mS inc
 symbol kNbMaxSecu 	= 3		' Number of loop at max to switch off
 
 'Variables
-symbol m_bLog		= bit0	' Set If Log Display
+symbol m_bLin		= bit0	' Set If Lin Display
 symbol m_b4ohm		= bit1	' Set If 4 ohm Mode
 symbol m_bOn		= bit2	' Set If OutPut On
 symbol m_bDCPos		= bit3	' Set if Dc Pos Detect
@@ -75,7 +76,7 @@ if m_b4ohm = 1 then	'if 4 Ohm, a correction must be applied for 2W Full scale
 	m_HP=m_WMul/14
 endif
 
-if m_bLog =1 then		' Log Display done by discrete value test
+if m_bLin =0 then		' Log Display done by discrete value test
 	m_Bar=0
 	
 	if m_HP>8 then
@@ -135,96 +136,13 @@ endif
 Gosub Ser_Out
 Goto SwLoop
 
-'Max reset task********************************************************************************
-' This task if to handle Max display timeout and switch off LS if overloaded
-start1:
-suspend 1	' Wait init
-
-ResetMax:
-Pause 100
-inc m_MaxTmp
-if m_MaxTmp>=kBarMaxHold then
-	m_MaxTmp=0
-	m_BarPeak=0
-endif
-
-if m_NbMax>=kNbMaxSecu then
-	m_bOn=0
-	Gosub Ser_Out	' Switch of out asap
-	
-	m_NbMax=0
-	
-	' Alarm Sound
-	for m_Tsk1Loop = 1 to 10
-		sound Out_Piezzo,(80,5,100,5)
-	next m_Tsk1Loop	
-
-endif
-	
-
-Goto ResetMax
-
-'Button Loop********************************************************************************
-' This task if to handle the panel Button
-start2:
-suspend 2	' Wait init
-
-BtLoop:
-
-'Look If Log
-if In_Log=0 then
-	sound Out_Piezzo,(120,10)
-	m_bLog=not m_bLog
-	WLog0:
-	if In_Log=0 then
-		goto WLog0
-	endif
-endif
-	
-'Look If On
-if In_HpCtl=0 and m_bDCPos = 0 and m_bDCNeg = 0 then
-	sound Out_Piezzo,(120,10)
-	m_bOn=not m_bOn
-	WOn0:
-	if In_HpCtl=0 then
-		goto WOn0
-	endif
-endif
-
-'Look If 4
-if In_Hp48=0 then
-	sound Out_Piezzo,(120,10)
-	m_b4ohm=not m_b4ohm
-	W480:
-	if In_Hp48=0 then
-		goto W480
-	endif
-endif
-
-Goto BtLoop
-
-
-'Secu Loop********************************************************************************
-' This task if to handle the DC securities
-start3:
-suspend 3	' Wait init
-
-SecuLoop:
-
-	m_bDCNeg=not In_DcNeg
-	m_bDCPos=not In_DcPos
-	
-	' Look for On and switch off if it's set
-	
-	 if  m_bDCPos=1 or m_bDCNeg=1 then
-		if m_bOn=1 then
-			m_bOn=0
-			Gosub Ser_Out	' Switch of out asap
-			sound Out_Piezzo,(120,15,115,10,110,5,0,10,120,10,0,10,120,10)
-			endif
-		endif
-
-Goto SecuLoop
+'Force Output Off ==============================================================
+ForceOff:
+suspend 0
+m_bOn=0
+Gosub Ser_Out	' Switch of out asap
+Resume 0
+return
 
 'Refresh output ==============================================================
 Ser_Out:
@@ -292,7 +210,7 @@ pulsout Out_Clock,kCkPulse
 PAUSEUS kCkPause
 
 'Led Led Log ~~~~~~~~~~~~~~~~~~~~~~
-if m_bLog = 1 then
+if m_bLin = 1 then
 	High Out_Data
 else
 	Low Out_Data
@@ -306,3 +224,92 @@ pulsout Out_Strobe,kCkPulse
 PAUSEUS kCkPause
 
 return
+
+'Max reset task********************************************************************************
+' This task if to handle Max display timeout and switch off LS if overloaded
+start1:
+suspend 1	' Wait init
+
+ResetMax:
+Pause 100
+inc m_MaxTmp
+if m_MaxTmp>=kBarMaxHold then
+	m_MaxTmp=0
+	m_BarPeak=0
+endif
+
+if m_NbMax>=kNbMaxSecu then
+	Gosub ForceOff	' Switch of out asap
+	m_NbMax=0
+	
+	' Alarm Sound
+	for m_Tsk1Loop = 1 to 10
+		sound Out_Piezzo,(80,5,100,5)
+	next m_Tsk1Loop	
+
+endif
+	
+
+Goto ResetMax
+
+'Button Loop********************************************************************************
+' This task if to handle the panel Button
+start2:
+suspend 2	' Wait init
+
+BtLoop:
+
+'Look If Lin/Log Button down
+if In_Lin=0 then
+	sound Out_Piezzo,(120,10)
+	m_bLin=not m_bLin
+	WLog0:
+	if In_Lin=0 then
+		goto WLog0
+	endif
+endif
+	
+'Look If On
+if In_HpCtl=0 and m_bDCPos = 0 and m_bDCNeg = 0 then
+	sound Out_Piezzo,(120,10)
+	m_bOn=not m_bOn
+	WOn0:
+	if In_HpCtl=0 then
+		goto WOn0
+	endif
+endif
+
+'Look If 4
+if In_Hp48=0 then
+	sound Out_Piezzo,(120,10)
+	m_b4ohm=not m_b4ohm
+	W480:
+	if In_Hp48=0 then
+		goto W480
+	endif
+endif
+
+Goto BtLoop
+
+
+'Secu Loop********************************************************************************
+' This task if to handle the DC securities
+start3:
+suspend 3	' Wait init
+
+SecuLoop:
+
+	m_bDCNeg=not In_DcNeg
+	m_bDCPos=not In_DcPos
+	
+	' Look for On and switch off if it's set
+	
+	 if  m_bDCPos=1 or m_bDCNeg=1 then
+		if m_bOn=1 then
+			Gosub ForceOff	' Switch of out asap
+			sound Out_Piezzo,(120,15,115,10,110,5,0,10,120,10,0,10,120,10)
+			endif
+		endif
+
+Goto SecuLoop
+
